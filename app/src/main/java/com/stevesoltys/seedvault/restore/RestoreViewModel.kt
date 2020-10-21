@@ -19,18 +19,20 @@ import com.stevesoltys.seedvault.BackupMonitor
 import com.stevesoltys.seedvault.MAGIC_PACKAGE_MANAGER
 import com.stevesoltys.seedvault.R
 import com.stevesoltys.seedvault.crypto.KeyManager
-import com.stevesoltys.seedvault.getAppName
+import com.stevesoltys.seedvault.ui.notification.getAppName
 import com.stevesoltys.seedvault.metadata.PackageState.APK_AND_DATA
 import com.stevesoltys.seedvault.metadata.PackageState.NOT_ALLOWED
 import com.stevesoltys.seedvault.metadata.PackageState.NO_DATA
 import com.stevesoltys.seedvault.metadata.PackageState.QUOTA_EXCEEDED
 import com.stevesoltys.seedvault.metadata.PackageState.UNKNOWN_ERROR
+import com.stevesoltys.seedvault.metadata.PackageState.WAS_STOPPED
 import com.stevesoltys.seedvault.restore.AppRestoreStatus.FAILED
 import com.stevesoltys.seedvault.restore.AppRestoreStatus.FAILED_NOT_ALLOWED
 import com.stevesoltys.seedvault.restore.AppRestoreStatus.FAILED_NOT_INSTALLED
 import com.stevesoltys.seedvault.restore.AppRestoreStatus.FAILED_NO_DATA
 import com.stevesoltys.seedvault.restore.AppRestoreStatus.FAILED_QUOTA_EXCEEDED
 import com.stevesoltys.seedvault.restore.AppRestoreStatus.IN_PROGRESS
+import com.stevesoltys.seedvault.restore.AppRestoreStatus.NOT_YET_BACKED_UP
 import com.stevesoltys.seedvault.restore.AppRestoreStatus.SUCCEEDED
 import com.stevesoltys.seedvault.restore.DisplayFragment.RESTORE_APPS
 import com.stevesoltys.seedvault.restore.DisplayFragment.RESTORE_BACKUP
@@ -166,6 +168,12 @@ internal class RestoreViewModel(
     private suspend fun startRestore(token: Long) {
         Log.d(TAG, "Starting new restore session to restore backup $token")
 
+        // if we had no token before (i.e. restore from setup wizard),
+        // use the token of the current restore set from now on
+        if (settingsManager.getToken() == null) {
+            settingsManager.setNewToken(token)
+        }
+
         // we need to start a new session and retrieve the restore sets before starting the restore
         val restoreSetResult = getAvailableRestoreSets()
         if (restoreSetResult.hasError()) {
@@ -212,6 +220,7 @@ internal class RestoreViewModel(
         val metadata = restorableBackup.packageMetadataMap[packageName] ?: return FAILED
         return when (metadata.state) {
             NO_DATA -> FAILED_NO_DATA
+            WAS_STOPPED -> NOT_YET_BACKED_UP
             NOT_ALLOWED -> FAILED_NOT_ALLOWED
             QUOTA_EXCEEDED -> FAILED_QUOTA_EXCEEDED
             UNKNOWN_ERROR -> FAILED
@@ -296,7 +305,8 @@ internal class RestoreViewModel(
                             }
                         }
                     }
-                    RestoreSetResult(restorableBackups)
+                    if (restorableBackups.isEmpty()) RestoreSetResult(app.getString(R.string.restore_set_empty_result))
+                    else RestoreSetResult(restorableBackups)
                 }
             }
             continuation.resume(result)
